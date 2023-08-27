@@ -1,0 +1,1357 @@
+---
+title: "Machine Learning Modeling with the R Tidymodels Ecosystem"
+subtitle: "Who Knows, Who Cares, Why Bother..."
+author: 
+  - name: "Raymond Balise PhD"
+    affiliation: 
+      - "Univerity of Miami, Biostatistics"
+  - name: "Franciso Cardozo (almost PhD)"
+    affiliation: 
+      - "Prevention Science Community Health"
+date: "`r Sys.Date()`"
+format:
+    revealjs:
+      theme: [default]
+      fontsize: 2em
+knitr:
+    opts_chunk:      ########## set global options ############
+        collapse: true # keep code from blocks together (if shown)
+        echo: false    # don't show code
+        message: true  # show messages
+        warning: true  # show warnings
+        error: true    # show error messages
+        comment: ""    # don't show ## with printed output
+        R.options:    
+            digits: 3    # round to three digits
+---
+
+```{css}
+.scrolling {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+```
+
+```{r}
+#| label: tidyverse
+#| echo: false
+
+library(conflicted)
+conflict_prefer("filter", "dplyr", quiet = TRUE)
+conflict_prefer("lag", "dplyr", quiet = TRUE)
+
+suppressPackageStartupMessages(library(tidyverse))
+
+# suppress "`summarise()` has grouped output by " messages
+options(dplyr.summarise.inform = FALSE)
+
+suppressPackageStartupMessages(library(tidymodels))
+tidymodels_prefer()
+
+```
+
+```{r}
+#| label: load-data
+
+```
+
+# The Plan
+
+::: columns
+::: {.column style="font-size: .8em;"}
+-   Thoughts on:
+    -   Learning
+    -   Different Views of Statistics
+    -   Evaluating Success
+    -   Ways to Measure Success
+    -   R Modeling
+-   Methods to Make Predictions
+    -   Similar Things (kNN)
+    -   Traditional Equations
+        -   OLS & Logistic Regression
+    -   Classification Trees
+        -   CART
+        -   Random Forests
+:::
+
+::: {.column style="font-size: .8em;"}
+-   How to Do (tidy) Modeling in R
+    -   Import
+    -   EDA
+    -   Select Vars
+    -   Train/Test
+    -   Recipe (Formula & Steps)
+    -   Specify Model
+    -   Specify Resampling
+    -   Tune
+    -   Select Parameters
+    -   Evaluate
+    -   Finalize
+:::
+:::
+
+# Thoughts on Learning
+
+## Terms Confused in the Media
+
+-   Artificial Intelligence \> Machine Learning \> Neural Networks
+
+-   "Artificial Intelligence", 1956
+
+    -   refers to when a [machine observes and responds]{style="color:red;"} to its environment
+
+-   "Machine Learning", 1959
+
+    -   refers to [algorithms with feedback loops]{style="color:red;"} that allow learning from experience
+
+-   "Neural Networks", 1958
+
+    -   subset of machine learning methods that feature [many nodes]{style="color:red;"} (individual, generalized linear models) that [work together]{style="color:red;"} to answer a question
+
+## Human Brain and Other Black Box Learners
+
+-   Some machine learning algorithms are like the human brain. [We know the fine details]{style="color:red;"} of what they are doing but [we don't understand how they actually work]{style="color:red;"}.
+    -   Where does self-awareness come from in the brain?
+-   Many ML methods are black boxes.
+    -   Excellent predictions
+    -   Neural networks [link together "nodes"]{style="color:red;"}
+    -   Support vector machines use [multidimensional surfaces]{style="color:red;"}
+-   *State of the art* methods shine a light into the black box.
+
+## Do you care [how and why]{style="color:red;"} it works?
+
+-   I ask myself, "Can I explain how and why this works to my mom?"
+    -   Decision Trees - very easy to explain
+    -   k-nearest-neighbors - needs a pen and the back of an envelope\
+    -   Logistic Regression - needs a whiteboard and a long conversation
+    -   Random Forests - difficult but doable
+    -   Neural Networks - very difficult to explain
+-   Balance the [quality]{style="color:red;"} of its predictions vs. the need to understand how it works.
+
+## How do you know when it is going to fail?
+
+-   If you don't know the role of the predictors you don't know how the model will break down.
+-   Are subsets of the population systematically incorrect?
+    -   If an algorithm says Black people will relapse that is a problem.
+    -   If an algorithm guesses wildly for Black people that is a problem.
+-   What do you do if the quality of predictions are systematically worse for a race group?
+
+## Do I need to assess the predictors?
+
+-   Some methods predict extremely well but they tell you little (or nothing) about if/how the individual predictors influence the outcome.
+
+-   Different methods tell you different things:
+
+-   Does having more of a predictor lead to more of the outcome?
+
+    -   Which predictors are the most important (but you have no idea how they work)
+    -   Which predictors matter (but you have no idea how they work)
+    -   You know nothing about which predictors work
+
+## Learning vs. Cramming for an Exam
+
+-   How does a *party monster* pass a class?
+    -   Studies previous test questions
+    -   Echoes back the same answers
+-   How does an excellent student pass a class?
+    -   Looks at [many examples]{style="color:red;"}, what features make a system work
+    -   Generalizes predictors to [guess a target]{style="color:red;"}
+
+## Types of Learning Problems
+
+Machine learning methods can handle:
+
+-   Classification
+    -   Is there HIV in blood?
+    -   Does someone have AIDS?
+-   Numeric Prediction
+    -   Viral load
+    -   Days until leaving care
+-   Pattern Detection
+    -   What drugs are frequently used together
+-   Clustering
+    -   What groups of people will respond to an intervention
+
+## Supervised vs. Unsupervised Learning
+
+-   How do you recognize a dog?
+    -   As a young child, with supervised learning, you had a caregiver provide you feedback over and over until you knew a dog from a cat from a cow.
+    -   We are getting good at building machines to do this.
+-   As a baby, how did you learn to recognize your mom?
+    -   With unsupervised learning you automatically recognized similarities that described your mom. You just noticed some "features" always occurred together. Colored shapes, smells, sounds and touches happened together and you noticed the pattern.
+    -   We have had limited success in doing this.
+-   Where do superstitions come from?
+    -   With semi-supervised learning, you may get feedback on a few trials, then you make a guess and confirm what you think.
+
+## Types of Problems -- Unsupervised Learning
+
+-   No Outcomes
+    -   64 cancer cell lines with 6,830 expression markers
+    -   Find similar types of cells.... Specify you want 4 groups ![+](images/clustered_cells.png){fig-align="center" width=75%}
+    -   After the fact, you can look to see if the groups make sense.
+    -   Here the cells actually came from 14 cancer cell lines.
+
+::: {.footer style="font-size: .2em;"}
+Image from: An Introduction to Statistical Learning: with Applications in R.
+
+Copyright 2013 Springer Science+Business Media
+:::
+
+## Inductive Logic
+
+Machine learning uses inductive (not deductive) logic to learn.
+
+-   You use [deductive]{style="color:red;"} logic for doing [proofs]{style="color:red;"} and derivations.
+    -   Start with a set of truths primitives and get to a guaranteed correct answer.
+-   Machine learning methods and people typically use [inductive]{style="color:red;"} logic.
+    -   [Observe a pattern]{style="color:red;"} over and over and use it to guide you toward an answer.
+
+# Different Views of Statistics
+
+## Medicine vs. Statistics vs. Machine Learning
+
+-   Medicine cares most about [central tendency]{style="color:red;"}.
+    -   Doctors care about what is a normal lab value (the mean).
+-   Statistics cares about [variability]{style="color:red;"}.
+    -   Statisticians care about defining the range of normal values across samples (the standard error).
+-   Machine learning cares about [prediction]{style="color:red;"}.
+    -   Business leaders care about predicting which things will sell.
+
+## $\beta$ or $\hat{y}$
+
+
+$$
+\hat{y} = \alpha + \beta_1x_1 + \beta_2x_2 + \cdots + \varepsilon 
+$$
+
++ Most statistics classes focus on estimating betas
+$$
+\text{Weight} = \text{Baseline} + \text{Height in Inches} \times \beta_1 + \text{Is Male} \times \beta_2
+$$
+
++ Machine learning classes focus on estimating y-hat.
+
+$$
+\text{A Person's Weight} = f(\text{Height in Inches}), f(\text{Is Male})
+$$
+
+## Beyond Euclidean Distance
+
++ [Common statistical]{style="color:red;"} methods look at [squared error]{style="color:red;"}.
++ The difference between predictions and outcomes can be [measured in many ways]{style="color:red;"}.
++ If you think of data points living in high dimensional space, you can easily use other metrics which describe [differences in direction]{style="color:red;"}.
+    + Cosine similarity
+    + Chebychev distance
+    + Mahalanobis distance
+    + Hamming distance
+
+## When loss is **bad**
+
++ If you need to make a [life and death prediction]{style="color:red;"}, you don't want to limit yourself to linear models and squared errors.  
++ You want to be comfortable with the idea of exploring [different loss functions]{style="color:red;"} and use the algorithm that gets you the [best possible prediction]{style="color:red;"}.
+
+## Why not look at nonlinear models?
+
++ !@#$ the betas….
++ There are popular algorithms that give better predictions, but you will gain relatively little or [no insight into how]{style="color:red;"} the predictors are driving the results.
++ Non-linear models:
+   + kNN 
+   + SVM
+   + Neural Networks
+   + Random Forests
+
+# How to Measure Success
+
+## When I was in School 
+
++ It was about p-values and residual diagnostics
+
+## Bias Variance Trade-off
+
+:::: {.columns}
+
+::: {.column}
+
++ RED:
+  + Low Variance - because new sin wave data would have a similar model
+  + High Bias - because the points are poorly modeled
+  + Underfit - It does not follow the pattern well!
+
+:::
+
+::: {.column}
+
++ BLUE
+  + High Variance – because small changes in the data will make a different model
+  + Low Bias – because it fits the data well
+  + Overfit - It follows the pattern of THESE data too well.
+
+:::
+
+::::
+
+![](images/biasVariance.png){fig-align="center" width=100%}
+
+# Creating Models in R
+
+(or ... thoughts on why Ray says R is user hostile)
+
+
+## The Insanity of Many Formula Interfaces $_1$
+
+### The *Formula* Interface 
+
+::: {.smaller}
+
+`Y ~ X` where we say "Y is a function of X".
+
+```{r 2-3-1a, eval=FALSE, echo=TRUE}
+# Variables and interaction
+model_fn(Sale_price ~ Neighborhood + Year_Sold + Neighborhood:Year_Sold, 
+         data = ames)
+
+# Shorthand for all predictors
+model_fn(Sale_price ~ ., data = ames)
+
+# inline function /transformations
+model_fn(log10(Sale_price) ~ ns(Longitude, df = 3) + ns(Latitude, df = 3),
+         data = ames)
+```
+
+
+- You [can't nest]{style="color:red;"} in-line modeling functions (like `pca`)
+```{r eval=FALSE, echo=TRUE}
+(model_fn(y ~ pca(scale(x1), scale(x2), scale(x3)), data = df))
+```
+-  All the model matrix calculations happen at once and .red[can't be recycled] when used in a model function
+-   For very wide datasets, [extremely inefficient]{style="color:red;"}
+-   [Multivariate]{style="color:red;"} outcomes are clunky and [inelegant]{style="color:red;"}.
+
+:::
+
+## The Insanity of Many Formula Interfaces $_2$
+
+### The *Non-Formula (x, y)* Interface 
+
+These functions have separate arguments (different objects) for the predictors and the outcomes(s):
+
+```{r 2-3-1b, eval=FALSE, echo=TRUE}
+features <- c("Year_sold", "Longitude", "Latitude")
+model_fn(x = ames[, features], y = ames$Sale_Price)
+```
+
++ Efficient calculations 
++ Inconvenient if you have transformations, factor variables, interactions, or any other operations to apply to the data prior to modeling.
+
+## The Insanity of Many Formula Interfaces $_3$
+
+### *Variable Name Specification* Interface
+
+All the data combined in one data set but the features and responses with character strings. 
+
+```{r 2-3-1c, eval=FALSE, echo=TRUE}
+model_fn(x = c("Year_sold", "Longitude", "Latitude"), y = "Sale_Price", 
+         data = ames.h2o)
+```
+
+Similar issues non-formula interface
+
+## The Horror of Many Function Arguments
+
+The arguments are not the same across different functions:
+
+```{r 2.3.2, eval=FALSE, echo=TRUE}
+lm_lm <- lm(Sale_Price ~ . data = ames)
+lm_glm <- glm(Sale_Price ~ . data = ames, family = gaussian)
+lm_caret <- train(Sale_Price ~ . data = ames, method = lm)
+```
+
+<br/>
+```{r echo = FALSE}
+`Table 2.1` <- data.frame(
+  Algorithm  = c("Linear discriminant analysis", "Generalized Linear model", 
+                 "Mixture discriminant analysis", "Decision tree", 
+                 "Random forest", "Gradient boosting machine"),
+  Package = c("MASS", "stats", "mda", "rpart", "ranger", "gbm"), 
+  Code = c("`predict(obj)`", 
+           "`predict(obj, type = 'response')`", 
+           "`predict(obj, type = 'posterior')`", 
+           "`predict(obj, type = 'prob')`", 
+           "`predict(obj$predictions)`",
+           "`predict(obj, type = 'response', n.trees)`"))
+
+suppressMessages(library(kableExtra))
+kable(`Table 2.1`) %>% column_spec(1:3, background = "white")
+```
+
+
+# Tidy Modeling in R
+
+## The `caret` Package
+
++ The `caret` package offered a unified interface to deal with inconsistencies.  
+
++ `caret` (and `mlr`) dominated the R machine learning landscape before the 2019/2020. 
++ You will see examples using `caret` all over the web.
+
++ Now it is part of `tidymodels` ecosystem.  Try to find the `tidymodels` (`parsnip`) analogous code.
+
+## Core Stickers
+
+![](images/tidymodelsStickers.png)
+
+:::{.notes}
+composable = components that can be selected and assembled in various combinations
+
+consistent = you know what a function will return (data will change in a known way)
+
+extensible = internal structure and data-flow are minimally or not affected by new or modified functionality
+:::
+
+##
+
+![](images/role-2.png)
+
+## 
+
+![](images/role-1.png)
+
+##
+
+![](images/role.png)
+
+## An (overly) Simple Analysis - with No Tuning
+
++ Use `rsample`] to split your data into training and test
++ Use `recipies`] to specify your outcome, predictors, transformations and subject ID variables (if any)
+  + Use `prep()`,  `bake()`, ~~`juice()`~~ to look at the data before modeling
++ Use `parsnip` to specify your model
+  + Logistic regression does not require any tuning
+  + Other models will badly overfit the data
++ Use `workflows` to glue together the recipe and model then fit the model
+
++ Use `yardstick` to describe the model quality
+
+## `recipies` - Preprocessing at its Best
+
++ With `tidyverse` you can preprocess your entire dataset.
+
++ When [tuning]{style="color:red;"} ML methods you will want to preprocess ***subsets*** of your data separately.
+
++ If your preprocessing involves imputing missing values or normalizing/standardizing you want to do this work on ***each subset separately***.
+
++ The `recipes` package makes it simple to preprocess the subsets.
+
+## What steps will `recipies` do?
+
++ Imputation
++ Univariate Transformations
++ Discretize - Make continuous categorical
++ Dummy Coding and Encoding
++ Normalize
++ Filter
++ Row operations
++ Add Interactions
++ Multivariate Transformations
+
+So much more: <https://recipes.tidymodels.org/reference/index.html#section-basic-functions>
+
+## Important `step_*()` Functions in `recipies`$_1$
+
++ Univariate Transformation
+  + `step_log()` - base e by default
+  + `step_YeoJohnson()` - make distribution as Gausian as possible
++ Dummy Coding and Encoding
+  + `step_date()` - split date into month, day, year variables
+  + `step_dummy()` - make dummy or one hot indicators
+  + `step_other()` - group rare categories
++ Normalize
+  + `step_normalize()` - center and scale numeric data
+
+## Important `step_*()` Functions in `recipies`$_2$
+
++ Filter
+  + `step_corr()` - remove highly correlated ([be careful]{style="color:red;"})
+  + `step_nzv()` - remove variables little variability (near zero variance)
+  + `step_zv()` - remove constants (zero variance)
++ Multivariate Transformations
+  + `step_pca()` - extract principle components
+  + `step_pls()` - extract partial least squares
+
+## Using `recipies` Without a Workflow
+
+:::{.smaller}
+
+I typically use the `recipies` package with `workflow` package to seamlessly integrate preprocessing and modeling but you can look at just the results of the preprocessing. Using `recipies` alone [you can see the transformed data with the `juice()` or `bake()` functions like this]{style="color:red;"}:
+
+:::
+
+```{r eval = FALSE, echo=TRUE}
+# these are instructions
+the_recipe <- 
+  recipe(isDead ~ ., data = training_data) %>%  # use all the variables to predict
+  update_role(subject, new_role = "ID") %>%  # keep subject number but don't model
+  step_other(country, language = 0.01) %>%  # bin rare countries & languages as other
+  step_date(date, features = c("year")) %>%  # extract year only
+  step_rm(date) %>%  # drop original date
+  themis::step_downsample(isDead)  # make get rid of some of the living people
+
+# assign role, make other categories, convert date, figure out the down sample %
+the_prep <- prep(the_recipe)  # this is `large_recipe object`
+
+# apply the prepared recipe - a good idea
+the_baked <- bake(the_prep, data = NULL)  # this is a `data set` the processed training_data
+
+# apply the recipe to new data - sometime useful for debugging
+the_bake <- 
+  bake(the_prep, 
+       new_data = weird_new_data) # this is a `data set` with the processed weird_new_data
+```
+
+## The `recipies` Package Details
+
+::::: {.smaller}
+
+You can specify that steps apply to specific types of variables using these functions inside of a `step_*()` function:
+
+:::: {.columns}
+
+::: {.column width="60%"}
+
++ `has_role(match = "predictor")`
++ `all_numeric_predictors()`
++ `all_nominal_predictors()`
++ `has_type(match = "numeric")`
+
+:::
+
+::: {.column width="40%"}
+
++ `all_predictors()`
++ `all_outcomes()`
++ `all_numeric()`
++ `all_nominal()`
+:::
+::::
+
+:::::
+
+```{r, eval=FALSE, echo=TRUE}
+recipe(outcome ~ ., data = my_data) %>% 
+  step_dummy(all_nominal()) %>%  # dummy code all character and factor variables
+  step_zv(all_predictors()) %>%  # drop numeric variables with zero variance
+  step_normalize(all_predictors())  # normalize the predictors
+```
+
+
+# The Process 
+
+The goal is to have your predictions approximate the truth.
+
+
+## If you had billions of dollars … or  … If you could be omnipotent for a day
+
++ You would do a census of everybody.
+
+  + In theory, there is no sampling bias and you know the truth.
+
+## If you had many millions of dollars… 
+
++ You would get a HUGE sample and use it for making predictions
+
++ You would check your results on another very large sample
+
+## If you had a lot of money…
+
++ You would get the biggest sample you could afford.
+
++ Put the data in random order.
+
++ Build you model on 3/4 of the data.  
+  + Model [training]{style="color:red;"} data 
+
++ Once you had the final model you would test it on the other 1/4.
+  + Model [test]{style="color:red;"} data.	
+
+## Train and Test
+
+:::: {.columns style='display: flex !important; height: 90%;'}
+
+::: {.column}
+
+-   *Training set*: choose features, build models, train our algorithms, tune hyperparameters, compare models.
+
+-   *Test set*: estimate an unbiased assessment of the model's performance, its *generalization error*. You use the test data [only once]{style="color:red;"}!
+  
+Typical recommendations for splitting your data into training-test splits include 60% (training) - 40% (test), 70%-30%, or 80%-20%
+
+:::
+
+::: {.column style='display: flex; justify-content: center; '}
+
+
+```{r, echo = FALSE, fig.cap=""}
+knitr::include_graphics("https://bradleyboehmke.github.io/HOML/images/data_split.png")
+```
+
+:::
+
+::::
+
+::: {.footer style="font-size: .2em;"}
+
+Image from https://bradleyboehmke.github.io/HOML/images/modeling_process.png
+
+:::
+
+
+## How to Split for Training and Test
+
+The two most common ways of splitting data include [*simple random sampling*]{style="color:red;"} and [*stratified sampling*]{style="color:red;"}.
+
++ *Simple random sampling*:
+  + [Ignore outcomes]{style="color:red;"} while randomly putting the people into the test set. 
+  
+  + This does not control for any data attributes, such as the distribution of your response/outcome variable $(Y)$.
+
++ *Stratified sampling*: 
+  + Makes sure training and test sets have .red[similar outcome distributions].
+  
+  + I use it (always).  It is important when there is a class imbalance imbalance in the outcomes (e.g., 90% of patient fail treatment and 10% respond).
+
+## Dealing with Class Imballances
+
+*Down-sampling*: reducing the size of the abundant class(es) to match the frequencies rare classes. 
+
+*Up-sampling*: new rare samples are generated by using repetition or bootstrapping.
+
+*Synthetic Minority Over-Sampling Technique, or SMOTE* over- and under-sampling.
+
+
+## Traditional Models
+
++ Splitting data into two groups makes perfect sense if you are doing ordinary least square regression or logistic regression.
+
+  + Manual or automatic procedures
+  
++ You see the results on the new data.
+  + Does the logistic guess the correct category.
+  
+  + Does the ordinary least squares regression model come up with about the right number for the outcome.
+
+## Modern Methods
+
++ Building models with modern methods is tricky because they have parameters you need to [tune]{style="color:red;"}.
+
+  + For example, k nearest neighbors makes an outcome guess for a new person based on some similar people.  [How many similar people should you use to get the best prediction?]{style="color:red;"}
+  
+  + Other algorithms (like CART or LASSO/Elastic Net) allow you to specify a "penalty" that each predictor needs to overcome to be included in a model. [How big a penalty gives the best prediction?]{style="color:red;"}
+      
+      + A large penalty would require a predictor to have a whopping huge improvement in the prediction (i.e., the residuals/the loss function). You get a simple model.
+      
+      + A tiny penalty would allow you to add more predictors.  You get a complex model.  
+
+## Split the Training Data $_1$
+
+To check the impact of the tuning parameters you build a model on [part of the training data]{style="color:red;"}.  You have two options:
+
+1) Cross-validate:
+
+  + Put the training data in random order.
+  
+  + Set aside the [first $10^{th}$]{style="color:red;"} of the training data and call it [validation/evaluation]{style="color:red;"} data.  Build on the remaining 90% and evaluate/validate with the evaluation/validation 10%.
+  
+  + Put back the first 10th and set aside the [second $10^{th}$]{style="color:red;"} of the training data and call it [validation/evaluation]{style="color:red;"} data.  Build on the remaining 90% and evaluate/validate with the evaluation/validation 10%.
+  
+  + Repeat on all $10^{th}$s.  Every person is used to help validate.
+
+## Split the Training Data $_2$
+
+2) Bootstrap
+
++ Note the size of your sample.  Call the number of people in the sample [N]{style="color:red;"}.
+  
++ Take a [random sample with replacement]{style="color:red;"} of size [N]{style="color:red;"}. 
+  + The process of building random samples of size N is called "the bootstrap" or ["bootstrapping"]{style="color:red;"}.  
+  
++ Build many other bootstrap samples of size N.
+
++ It can be shown that approximately 1/3 of the data [(36.8%) will be excluded from any particular bootstrap sample]{style="color:red;"}.
+  
++ Build a model on the bootstrap sample and evaluate/validate on the 1/3 that is left out. Repeat on the other resamples.
+  
+## The Actual Process as Text {.smaller}
+
+1.  Collect data
+2.  Data exploration and preparation
+    -   Cleaning
+    -   Many algorithms need standardization/normalization
+3.  Split the data into a [training]{style="color:red;"} and [test]{style="color:red;"} sub sets
+4.  Split the training data into [analysis]{style="color:red;"}/[assessment]{style="color:red;"} sets
+5.  Pick an algorithm
+6.  Training using the algorithm
+7.  Model evaluation
+    -   RMSE or contingency table statistics (accuracy, sensitivity, specificity)
+8.  Model improvement
+    -   Tweak preparation, reparametrize a method or use a different method
+9.  Evaluate/Test results on new data
+
+## The Actual Process as an Image
+
+
+```{r, echo = FALSE, fig.cap=""}
+knitr::include_graphics("https://bradleyboehmke.github.io/HOML/images/modeling_process.png")
+```
+
+::: {.footer style="font-size: .2em;"}  
+Image from: https://bradleyboehmke.github.io/HOML/images/modeling_process.png
+:::
+
+## The Steps With R Tidymodels
+
+::: {.scroll-container style="overflow-y: scroll; height: 600px;"}
+![](images/the_big_picture.jpg)
+:::
+
+## So Many Methods ... So Little Time
+
+Once your data has been split you can use use ***many*** algorithms to try to make predictions.
+
+"Hands-On Machine Learning with R" is one of my favorite books. It was published in 2020 so it is out of date.
+
+Book: <https://bradleyboehmke.github.io/HOML/>
+
+Supplemental Material: <https://koalaverse.github.io/homlr/>
+
+GitHub for Supplemental Material: <https://github.com/koalaverse/homlr/>
+
+   
+# k Nearest Neighbors
+Prediction without any abstraction/learning
+
+## kNN
++ "Plot" your data in D dimensional space (where D is the number of predictors you have).
++ Add your new person to the plot and look at who is close by.
++ There is [no abstraction]{style="color:red;"} here.
++ Great basic coverage (but with dated code) in: 
+
+![](images/MLwR_cover.jpg){fig-align="center" width=50%}
+
+## Is a tomato a fruit or a vegetable? 
+
+::: {.smaller}
+
+> A fruit is a seed-bearing structure that develops from the ovary of a flowering plant, whereas vegetables are all other plant parts, such as roots, leaves and stems.
+> 
+> <https://www.livescience.com/33991-difference-fruits-vegetables.html>
+
+:::
+
+## kNN in Pictures
+
+::: {layout-ncol=1}
+
+![](images/tomato_picture1.jpg){width=30%}
+![](images/tomato_picture2.jpg){width=30%}
+![](images/tomato_picture3.jpg){width=30%}
+
+:::
+
+::: {.footer style="font-size: .2em;"}
+
+Images from: Machine Learning with R: Expert techniques for predictive modeling to solve all your data analysis problems, 2nd Edition. Copyright 2015 Packt Publishing
+
+:::
+
+## The Math
+
+![](images/euclid.png){fig-align="center" width=50%}
+
+The kNN function will [calculate all these distances, check the class on the k closest]{style="color:red;"} foods, and report the most common class.
+
+
+## Units/Scales of Measurement
++ Here the sweetness and crunchiness were on a 1 to 10 point scale.
++ What happens if we use spiciness/heat instead of sweetness?
++  **Scoville Heat Units** (SHU) based on the concentration of capsaicinoids:
+
+![:scale 50%](images/scoville.png)
+
++ Nothing else will matter because the range is huge.
+
+
+## Normalize or Standardize 
+
+
+:::: {.columns}
+
+::: {.column width="50%"}
++ Normalize
+  + Force the range between 0 and 1.  
+  + New extreme values break the normalization.
+  
+  $X_{new} = \frac{x-min(X)}{max(X)-min(X)}$
+:::
+
+::: {.column width="50%"}
++ Z score standardize
+  + Most values will be within 3 SD.
+  + New extreme values are okay.
+  
+  <br/>
+  $X_{new} = \frac{X-\mu}{\sigma} = \frac{X - Mean(X)}{StdDev(X)}$
+:::
+::::
+
+
+
+## Categorical Predictors
+
++ Binary 
+  + No = 0, Yes = 1
+  + Works well if other values are normalized
+  
++ Many nominal levels
+  + Dummy code / One Hot Encoding
+  + Works well if other values are normalized
+  
++ Ordinal data
+  + Dummy code
+  + If you think differences between levels are about the same, treat them as interval data and code as 1, 2, 3. Then normalize or standardize.
+
+## The `recipies` Package Saves the Day
+
+You can add steps to the recipe to deal with all these issues.
+
+```{r eval=FALSE, echo=TRUE}
+recipe(outcome ~ ., data = theData) %>%
+  step_dummy(all_nominal()) %>%  # dummy code all character and factor variables
+  step_zv(all_predictors()) %>%  # drop numeric variables with zero variance
+  step_normalize(all_predictors())  # normalize the predictors
+  step_impute_median(all_numeric(), -all_outcomes())  # guess missing values
+  step_impute_mode(all_nominal(), -all_outcomes())  # guess missing values
+```
+
+## What pre-processing is appropriate for KNN?
+
+```{r, cache=FALSE, echo=FALSE, fig.align="center", fig.cap="Steps to include in your recipe"}
+knitr::include_graphics("images/knnPreprocessing.png", error = FALSE)
+```
+
+The full table with useful tips is [here](https://www.tmwr.org/pre-proc-table.html).
+
+## Choose a k
+
++ If k = 1, and there is a typo for the class of the closest food, you are in trouble.
+
++ If k = n, you will always guess the most common class.
+
++ Typically, people choose k equal to either:
+  + Square root of n, or
+  + Try many values, starting at k = 3, and look at how the model does on the validation (which has the truth):
+      + Accuracy
+      + Precision (what epidemiology folks call PPV) 
+      + Recall (what everybody else calls sensitivity)
+
+# Doing k Nearest Neighbors
+
+
+## Predict Breast Cancer with kNN
+
+
+```{r eval=TRUE, message=FALSE}
+wbcd <- 
+  readr::read_csv("wisc_bc_data.csv")
+```
+
+```{r, eval=FALSE, message=FALSE}
+URL <- 
+  paste0(
+    "https://raw.githubusercontent.com/dataspelunking/MLwR/master/",
+    "Machine%20Learning%20with%20R%20(3rd%20Ed.)/Chapter03/wisc_bc_data.csv"
+  )
+
+wbcd <- 
+  suppressMessages(readr::read_csv(URL))
+
+write_csv(wbcd, "./06_tuning_knn/lecture/wisc_bc_data.csv")
+```
+
+```{r}
+#| echo: true
+#| results: hold
+
+wbcd <- wbcd %>% 
+  mutate(diagnosis = factor(diagnosis, 
+                            levels = c("B", "M"), 
+                            labels = c("Benign", "Malignant")))
+
+library(janitor)
+
+the_table <- wbcd %>% 
+  tabyl(diagnosis) %>% 
+  adorn_pct_formatting(0)
+
+the_table
+
+
+```
+
+
+## Look
+
+```{r}
+#| echo: true
+#| eval: false
+
+library(skimr)
+skim(wbcd)
+```
+
+:::{.scrolling style="font-size: .5em;"}
+
+```{r}
+#| echo: false
+library(skimr)
+skim(wbcd)
+```
+
+:::
+
+## Drop Stuff... the SE Variables
+
+```{r}
+wbcd <- wbcd %>% 
+  select(-ends_with("se"))
+
+glimpse(wbcd)
+```
+
+##  Training and Test
+
+```{r}
+#| echo: true
+
+suppressPackageStartupMessages(library(tidymodels))
+set.seed(321)
+
+# Put 3/4 of the data into the training set. Try to have same percentage benign
+data_split <- 
+  initial_split(wbcd,
+                prop = 3/4,  # this is the default
+                strata = diagnosis)
+
+# Create training and test data sets:
+train_data <- training(data_split) 
+test_data <- testing(data_split)
+```
+
+## How did it do?
+.pull-left[
+```{r}
+wbcd %>% 
+  tabyl(diagnosis) %>% 
+  adorn_pct_formatting(0)
+```
+]
+.pull-right[
+```{r}
+train_data %>% 
+  tabyl(diagnosis) %>% 
+  adorn_pct_formatting(0)
+```
+
+```{r}
+test_data %>% 
+  tabyl(diagnosis) %>% 
+  adorn_pct_formatting(0)
+```
+]
+
+
+## Build the Recipe
+
+
+```{r}
+the_recipe <- 
+  recipe(diagnosis ~ .,
+         data = train_data) %>%
+  update_role(id, 
+              new_role = "ID") %>% 
+  step_normalize(all_numeric(), -id) %>% 
+  step_corr(all_predictors(), threshold = 0.7, method = "spearman")
+
+the_recipe
+```
+
+## Build a Model Specfication (with Defaults)
+
+```{r}
+library(kknn)  # there is a bug so this package does not automatically load
+the_model <- nearest_neighbor() %>%  # the default is to use 5 neighbors
+  set_engine("kknn") %>% 
+  set_mode("classification") 
+
+the_model
+```
+
+## Specify a kNN model
+
+```{r, eval = FALSE}
+library(kknn)  
+the_model <- nearest_neighbor(`neighbors = tune()`) %>%
+  set_engine("kknn") %>% 
+  set_mode("classification") 
+
+the_model
+```
+
+```{r knn-model, echo=FALSE}
+library(kknn)  # there is a bug so this package does not automatically load
+the_model <- nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>% 
+  set_mode("classification") 
+
+the_model
+```
+
+## Make the Workflow
+
+```{r}
+the_workflow <- # new workflow object
+ workflow() %>% # use workflow function
+ add_recipe(the_recipe) %>%   # use the new recipe
+ add_model(the_model)    # add your model spec
+  
+the_workflow
+```
+
+## Make a Cross Validation Object
+
+I need to tell it how to make the validation data. I will split the data into fifths.  In each 1/5 of the data, it uses 80% of the data to do the analysis and 20% to assess/evaluate.  I will get estimates that are averaged over the fifths. 
+
+```{r}
+cv_folds <-
+  vfold_cv(train_data, 
+           v = 5,  # the number of sets
+           strata = diagnosis)  # keep the percentage with cancer the same
+```
+
+## Tune with a Simple (Slow) Grid Search
+Here I am doing the kNN modeling and only checking for 3, 8, 13, 18, etc. neighbors.
+
+```{r}
+# spec is defined in readr and yardstick
+suppressMessages(conflict_prefer("spec", "yardstick"))
+
+doParallel::registerDoParallel()  # use multiple CPU cores for faster processing
+
+the_tuned <-
+  the_workflow %>% 
+  tune_grid(
+    resamples = cv_folds,  # data used for cross validating
+    grid = data.frame(neighbors = seq(3, 53, by = 5)),
+    metrics = metric_set(
+      roc_auc, recall, precision, f_meas, accuracy, kap, sens, spec
+    )
+  )
+
+doParallel::stopImplicitCluster()  # stop parallel processing
+```
+
+## Classification Metrics in `yardstick`
+
+```{r echo = FALSE, warning=FALSE}
+tab <- matrix(c("A", "B", "C"," D"), byrow = T, nrow = 2)
+
+the_table <- tibble(`Predicted` = c("Yes", "No"), 
+                      Yes = tab[,1], No = tab[,2])
+
+library(flextable)
+my_header <- data.frame(
+  col_keys = colnames(the_table),
+  line1 = c("Predicted", rep("Truth", 2)),
+  line2 = colnames(the_table)
+)
+
+flextable(the_table, col_keys = my_header$col_keys) %>%
+  set_header_df(
+    mapping = my_header,
+    key = "col_keys"
+  ) %>% 
+  theme_booktabs() %>% 
+  autofit(part = "all") %>%    
+  align(align = "center", part = "all") %>% 
+  merge_h(part = "header") %>% 
+  merge_v(part = "header") %>% 
+  merge_h(part = "body") %>% 
+  merge_v(part = "body") %>%
+  align_nottext_col(align = "center") 
+```
+
+$Prevalence = (A + C) / (A + B + C + D)$
+
+::: {style="font-size: .5em;"}
+
+| Metric | Measures |
+|--------|----------| 
+| accuracy | proportion of the data that are predicted correctly |
+| bal_accuracy() | average of sens() and spec() |
+| detection_prevalence() | predicted positive events (both true positive and false positive) divided by the total number of predictions |
+| f_meas() | $(1+\beta^2)∗percision\times recall/((\beta^2\times percision)+recall)$|
+| j_index() | Youden's J $sens() + spec() - 1$ |
+| kap()| kappa - performance in accuracy beyond that would be expected by chance alone |
+| mcc()| Matthews correlation coefficient |
+| npv()| Negative predictive value $(Specificity*(1-Prevalence))/(((1-Sensitivity)\times Prevalence) + ((Specificity) \times (1-Prevalence)))$|
+| ppv()| Positive predicted value $(Sensitivity \times Prevalence)/((Sensitivity \times Prevalence) + ((1-Specificity) \times (1-Prevalence)))$|
+| precision | $(A / A + B)$ |
+| recall() | $A / (A + C)$ |
+| sens() | $A / (A + C)$ |
+| spec() | $D / (B + D)$ |
+
+:::
+
+## Set Parameter Limits for a Better Search
+  
+Here I am specifying details for a Bayesian (fast) search.  
+  
+```{r parameters}  
+the_parameters <-   
+  the_workflow %>% 
+  extract_parameter_set_dials() %>% 
+  update(
+    neighbors = neighbors(c(3, 53)) # limits on # of neighbors to check
+  ) 
+
+class(the_parameters)
+the_parameters
+# limits are buried in the object 
+the_parameters[[6]][[1]][["range"]][["lower"]]
+the_parameters[[6]][[1]][["range"]][["upper"]]
+```
+
+
+## Tune with a Bayesian Homing Algorithm
+
+```{r}
+# I want to look at specificity and readr also uses a spec() function
+suppressMessages(conflict_prefer("spec", "yardstick") )  
+
+ctrl <- control_bayes(verbose = TRUE,  # show progress as it searches
+                      save_pred = TRUE)  # save the predicted probabilities 
+set.seed(890)
+
+doParallel::registerDoParallel()  # use multiple cores for faster processing
+
+the_tuned <- tune_bayes(the_workflow, 
+                        resamples = cv_folds,  # cross validation details
+                        initial = 10,  # number of initial tries  
+                        iter = 20,  # max number of search iterations
+                        param_info = the_parameters,  # object with limits
+                        # save many evaluation metrics 
+                        metrics = metric_set(roc_auc, accuracy, kap),
+                        control = ctrl)
+
+doParallel::stopImplicitCluster()  # stop parallel processing
+```
+
+
+
+## The Tuned Model Object
+
+```{r}
+class(the_tuned)
+
+the_tuned
+```
+
+## How did we do? $_1$
+
+```{r}
+#| echo: true
+collect_metrics(the_tuned)
+```
+
+## How did we do? $_2$
+
+```{r}
+#| echo: true
+show_best(the_tuned, metric = "roc_auc")
+```
+
+## How did we do? $_3$
+
+```{r}
+#| echo: true
+autoplot(the_tuned)
+```
+
+## The Best *k*
+
+```{r}
+#| echo: true
+the_best <- the_tuned %>%
+  select_best("roc_auc")
+
+the_best
+```
+
+## Update the Workflow with the Best *k*
+
+```{r}
+#| echo: true
+the_final_workflow <- 
+  the_workflow %>% 
+  finalize_workflow(the_best)
+
+the_final_workflow
+```
+
+## Are we done?
+
+If you want to explore the [training]{style="color:red;"} results
+
+```{r}
+#| echo: true
+the_results <-
+  the_final_workflow %>% 
+  fit_resamples(
+    resamples = cv_folds, 
+    metrics = metric_set(
+      recall, precision, f_meas, accuracy, kap, roc_auc, sens, spec
+      ),
+      control = control_resamples(save_pred = TRUE)
+  ) 
+```
+
+When you are done, you can fit the model to the [test]{style="color:red;"} data
+```{r}
+#| echo: true
+the_results <-
+  the_final_workflow %>% 
+  # rebuild the model using all training data (not resampled) and fit on test
+  last_fit(
+    split = data_split, 
+    metrics = metric_set(
+      recall, precision, f_meas, accuracy, kap, roc_auc, sens, spec
+    )
+  )
+```
+
+
+## Look at the Results Per Person
+
+```{r}
+the_prediction <-  
+  the_results %>% 
+  collect_predictions()
+
+head(the_prediction, n = 20)
+```
+
+## Confusion Matrix
+
+```{r}
+the_prediction %>% 
+  conf_mat(diagnosis, .pred_class)
+```
+
+## ROC Curve
+
+```{r, fig.height=6, warning=FALSE}
+the_prediction %>% 
+  roc_curve(diagnosis, .pred_Benign) %>% 
+  autoplot()
+```
+
+## Prediction Probabilities
+
+```{r, eval=FALSE}
+the_prediction %>% 
+  ggplot() +
+  geom_density(aes(x = .pred_Benign, 
+                   fill = diagnosis), 
+               alpha = 0.5) +
+  labs(title = "True Diagnosis vs Prediction Probabilty",
+       x = "Probabilty of Being Benign",
+       y = "Density") +
+  ggthemes::theme_few()  +
+  theme(legend.title=element_blank())
+```
+
+```{r, echo=FALSE, fig.height=4}
+the_prediction %>% 
+  ggplot() +
+  geom_density(aes(x = .pred_Benign, 
+                   fill = diagnosis), 
+               alpha = 0.5) +
+  labs(title = "True Diagnosis vs Prediction Probabilty",
+       x = "Probabilty of Being Benign",
+       y = "Density") +
+  ggthemes::theme_few()  +
+  theme(legend.title=element_blank())
+
+```
+
+
+## Look at the Metrics
+
+```{r}
+the_results %>%
+  collect_metrics(summarize = TRUE)
+```
+  
+## Beyond Acuracy ...
+
+It is important to look at things beyond Yes/No, I got it right!
+  + Down Syndrome happens in about 1/700 pregnancies.
+  + Given 100,000 births, if your sample has 147 cases of Down....
+
+
+![](images/beyondTable.png){fig-align="center" width=50%}
+
+... and if your diagnostic test says no Down every time, you are right 99.8% of the time (accuracy = 99,883 of 100000 are right ) but your test is valueless.
+
+## Kappa $\kappa$
+
+Kappa measures how good you are relative to chance guessing.
+
+::::: {.columns}
+
+:::: {.column style="text-align: center;"}
+
+![](images/beyondTable.png){fig-align="center" width=50%}
+
+
+Accuracy = 99.853  
+Kappa = 0
+
+::::
+
+:::: {.column style="text-align: center;"}
+
+![](images/beyondTable2.png){fig-align="center" width=50%}
+
+Accuracy  = 99.996  
+Kappa = .986
+
+::::
+
+:::::
+
+
+::: {style="text-align: center;"}
+Very rough interpretations:  
+$\kappa$ > 0.75 as excellent,   
+$\kappa$ 0.40 to 0.75 as fair to good,   
+$\kappa$ < 0.40 as poor.
+
+:::
+
+## The Answer
+
++ A reviewer will expect to see the ROC curve with the c statistic (what the output calls "roc_auc"), accuracy and kappa. 
++ If you are talking to epidemiologists, they will expect to see sensitivity and specificity plus negative and positive predictive values.
+
+This is a fantastic model.  We have no idea which predictors matter....
