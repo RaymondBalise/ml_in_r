@@ -324,7 +324,7 @@ model_fn(log10(Sale_price) ~ ns(Longitude, df = 3) + ns(Latitude, df = 3),
 ```{r eval=FALSE, echo=TRUE}
 (model_fn(y ~ pca(scale(x1), scale(x2), scale(x3)), data = df))
 ```
--  All the model matrix calculations happen at once and .red[can't be recycled] when used in a model function
+-  All the model matrix calculations happen at once and [can't be recycled]{style="color:red;"} when used in a model function
 -   For very wide datasets, [extremely inefficient]{style="color:red;"}
 -   [Multivariate]{style="color:red;"} outcomes are clunky and [inelegant]{style="color:red;"}.
 
@@ -616,7 +616,7 @@ The two most common ways of splitting data include [*simple random sampling*]{st
   + This does not control for any data attributes, such as the distribution of your response/outcome variable $(Y)$.
 
 + *Stratified sampling*: 
-  + Makes sure training and test sets have .red[similar outcome distributions].
+  + Makes sure training and test sets have [similar outcome distributions].
   
   + I use it (always).  It is important when there is a class imbalance imbalance in the outcomes (e.g., 90% of patient fail treatment and 10% respond).
 
@@ -1253,13 +1253,17 @@ head(the_prediction, n = 20)
 ## Confusion Matrix
 
 ```{r}
+#| echo: true
 the_prediction %>% 
   conf_mat(diagnosis, .pred_class)
 ```
 
 ## ROC Curve
 
-```{r, fig.height=6, warning=FALSE}
+```{r}
+#| echo: true
+#| fig-height: 6
+#| warning: false
 the_prediction %>% 
   roc_curve(diagnosis, .pred_Benign) %>% 
   autoplot()
@@ -1267,7 +1271,9 @@ the_prediction %>%
 
 ## Prediction Probabilities
 
-```{r, eval=FALSE}
+```{r}
+#| echo: true
+#| eval: false
 the_prediction %>% 
   ggplot() +
   geom_density(aes(x = .pred_Benign, 
@@ -1280,7 +1286,9 @@ the_prediction %>%
   theme(legend.title=element_blank())
 ```
 
-```{r, echo=FALSE, fig.height=4}
+```{r}
+#| echo: false
+#| fig-height: 4
 the_prediction %>% 
   ggplot() +
   geom_density(aes(x = .pred_Benign, 
@@ -1298,6 +1306,7 @@ the_prediction %>%
 ## Look at the Metrics
 
 ```{r}
+#| echo: true
 the_results %>%
   collect_metrics(summarize = TRUE)
 ```
@@ -1355,3 +1364,815 @@ $\kappa$ < 0.40 as poor.
 + If you are talking to epidemiologists, they will expect to see sensitivity and specificity plus negative and positive predictive values.
 
 This is a fantastic model.  We have no idea which predictors matter....
+
+
+# Linear Model Selection and Regularization
+
+## This Section
++ Understand traditional penalty methods
++ Understand what is shrinkage
++ Understand why it is useful
++ Understand what is the difference between ridge and LASSO
+
+## Traditional Generalized Linear Regresion Methods
+
++ Pro(s) 
+  + Support (relatively simple) inference.
+  + Surprisingly competitive compared to the state of the art.
+  + They work when the sample size (N) is far more than the number of predictors ( $N \gg p$ )
++ Con(s) (Why use another fitting method?)
+  + They do not work well when N is not much bigger than p
+  + They do not work when you have more predictors then the sample size ( $p > N$ )
+  + Variable selection is tricky.
+
+## Old Fassion Variable Selection for Linear Models
+
+Adding in new predictors (even noise) *will* improve R-squared.  Here are traditional ways to deal with the overfitting:
+
++ **Best Subset Selection**: innumerate [all possible models and cross validate]{style="color:red;"} using penalties for adding in more variables $C_p$ or AIC, BIC, or adjusted $R^2$ . 
+  + That quickly gets out of hand because you need to build $2^p$ models. 
+      + $p = 10$ approximately 1,000 possible models to be considered
+      + $p = 20$ leads to more than 1,000,000 models.
++ **Forward or backward selection**: [using cross-validated prediction error]{style="color:red;"} to find smallest RSS or highest $R^2$ when you add or remove a predictor.
+  + While these methods can lead to good predictions the $p$-values are nonsensical.
+
+## How to choose the best? $_1$
+
+You can add a penalty to your measure of model performance for every variable (or level of a categorical variable) that you add.
+$$C_p = \frac{1}{n}(\text{RSS}+2d\hat\sigma^2)$$
+where $\hat\sigma^2$ is an estimate of the variance of the error $\epsilon$ . The $C_p$ statistic adds a penalty of $2d\hat\sigma^2$ to the training RSS in order to adjust for the fact that the training error tends to underestimate the test error.
+
+$C_p$ and AIC are proportional to each other.
+
+## How to choose the best? $_2$
+
+$$BIC = \frac{1}{n}(\text{RSS}+\text{log}(n)2d\hat\sigma^2)$$
+
+The BIC statistic generally places a heavier penalty on models with many
+variables, and hence results in the selection of smaller models than $C_p$.
+
+$$\text{Adjusted } R^2 = 1 − \frac{\text{RSS}/(n − d − 1)}{\text{TSS}/(n − 1)}$$
+Where TSS = $(y_i − \bar{y})^2$ is the *total sum of squares* for the response.  The adjusted $R^2$ is not as well motivated in statistical theory as AIC, BIC, and $C_p$.
+
+I tend to use AIC (if I want more predictors) or BIC (if I want less).
+
+## Different Metrics Give Different Results
+Notice $C_p$ (AIC) is more liberal than BIC.
+
+```{r, cache=FALSE, echo=FALSE, fig.align="center", fig.cap="", out.width = "800px"}
+knitr::include_graphics("images/fig6_2.jpg", error = FALSE)
+```
+
+::: {.footer style="font-size: .2em;"}  
+Fig 6.2 from ISLR
+:::
+
+## What is optimized?
+
++ Remember that in ordinary least squares regression or generalized linear models like logistic regression your goal is to minimize the residual sum of squared errors.  
+
++ The traditional optimization methods do not directly include in penalties to prevent too many predictors.
+
+## Shrinkage
++ Shrinkage methods are an alternative to least squares which constrains or regularizes the coefficient estimates.
+  + In English.... they shrinks the coefficient estimates (βs) towards zero.
++ In other words, with shrinkage algorithms you try to optimize the RSS at the same time you try to [minimize the size of the β estimates]{style="color:red;"}.
++ The two best-known techniques for shrinking the regression coefficients towards zero are ridge regression and LASSO (least absolute shrinkage and selection operator).
+
+## Ridge vs. Lasso
+
+$$\text{RSS} = \sum_{i=1}^n\bigg( y_i - \beta_0 - \sum_{j=1}^p \beta_j x_{ij}\bigg)^2.$$
+[Ridge]{style="color:red;"} ( $\ell_2$ norm) minimizes the RSS and also the [square]{style="color:red;"} of the beta estimates.
+$$\sum_{i=1}^n\bigg( y_i - \beta_0 - \sum_{j=1}^p \beta_j x_{ij}\bigg)^2 + \lambda \sum_{j=1}^p \beta_j^2 = \text{RSS} + \lambda \sum_{j=1}^p \beta_j^2$$
+[LASSO]{style="color:red;"} ( $\ell_1$ norm) minimizes the RSS and also the [absolute value]{style="color:red;"} of the beta estimates
+$$\sum_{i=1}^n\bigg( y_i - \beta_0 - \sum_{j=1}^p \beta_j x_{ij}\bigg)^2 + \lambda \sum_{j=1}^p | \beta_j| = \text{RSS} + \lambda \sum_{j=1}^p | \beta_j|,$$
+
+## What are the practicle differences?
+
++ Ridge shrinks all the $\beta$s by (approximately) the same fixed percentage.
+  + So betas get smaller but all variables remain.
++ LASSO shrinks all the $\beta$s by (approximately) the same fixed amount.  
+  + So small beta's can shrink to zero.
+  + It does variable selection
+  
+## How do you shink?
+
++ You specify a range of shrinkage values and check the performance on your analysis metric (typically RMSE if your outcome is continuous or ROC AUC if your outcome is categorical) with cross validation or with bootstrap resamples.
++ You want to check values from the range of no shrinkage (which will be the same as regression) to so much shrinkage you have no predictors left (for LASSO).
+  + With each amount of shrinkage you chec your goodness metric.
+
+```{r, cache=FALSE, echo=FALSE, fig.align="center", fig.cap=""}
+knitr::include_graphics("images/fig6_6.jpg", error = FALSE)
+```
+
+::: {.footer style="font-size: .2em;"}  
+Fig 6.6 from ISLR 
+:::
+
+## Do you need to choose between LASSO and ridge methods?
+
++ *NO!*
++ It is possible to do both LASSO and ridge regression.  It is called Elastic Net Regularization.
++ I typically just do LASSO because I want the variable selection that comes from LASSO.
+
+# CART
+
+## Learning Objectives
+
++ Understand how CART methods work
++ Understand the strengths and weakness of CART
++ Understand how to interpret a classification tree
++ Understand tree pruning
++ Know how to build a classification tree
++ Know how to evaluate classification tree performance
++ Understand what to read to learn more about tree methods
+
+
+
+```{r pretty-tibbles, echo = FALSE, results='asis'}
+options(crayon.enabled = FALSE)
+old.hooks <- fansi::set_knit_hooks(knitr::knit_hooks)
+```
+
+## You Want to Read This!
+
+:::: {.columns}
+
+::: {.column width="50%"}
+![:scale 70%](images\greenwell.png)]{fig-align="center" width=50%}
+:::
+
+::: {.column width="50%"}
++ It was published in 2022.
++ It shows how the algorithms work and has superb writing.
++ It currently is missing Tidymodels and Julia code but my wife's current husband wants to fix that.
++ <https://www.amazon.com/Tree-Based-Methods-Statistical-Learning-Chapman/dp/0367532468>
+:::
+
+::::
+
+
+## Classification Trees
+
++ Use a set of binary splits across all your variables to make a binary decision.  Start at the root and build branches until you get to leaf nodes.
++ It recursively splits the data.
++ Yes... it is drawn up-side down.
+
+![](images\hill0.png)]{fig-align="center" width=68%}
+
+
+::: {.footer style="font-size: .2em;"}
+Image from: https://tmv.netlify.app/site/slides/rmed03-tune.html#4
+:::
+
+## Classification Tree Terms
+
+![](images\hill.png)]
+
+::: {.footer style="font-size: .2em;"}  
+https://tmv.netlify.app/site/slides/rmed03-tune.html#8
+:::
+
+## Decision Trees
+
++ Say you want to classify a set of movies so each film falls into one of three categories: Critical Success, Mainstream Hit, Box Office Bust
+![](images\movie1.png)]{fig-align="center" width=68%}
+
+::: {.footer style="font-size: .2em;"}  
+Image from Machine Learning with R: Expert techniques for predictive modeling by Brett Lantz 
+:::
+
+## How It Works
+
++ The algorithm will [first]{style="color:red;"} find the [best split]{style="color:red;"} in the [best predictor]{style="color:red;"}.  
+  + It wants to end up with "pure" groups but it can only make splits parallel to an axis.
++ Then it does the 2nd best split ... and 3rd ... and 4th, etc. ...
+
+:::: {.columns}
+
+::: {.column width="50%"}
+![](images\movie2.png){fig-align="center" width=48%}
+![](images\movie3.png){fig-align="center" width=48%}
+:::
+
+::: {.column width="50%"}
+![:scale 75%](images\movieTree.png)
+:::
+::::
+
+::: {.footer style="font-size: .2em;"}  
+Images from Machine Learning with R: Expert techniques for predictive modeling by Brett Lantz
+:::
+
+## Stop!
+
++ Try to split on [every category]{style="color:red;"} in every categorical variable and [every possible split]{style="color:red;"} on every numeric variable. Choose the "best" across all possible splits on the possible variables.
+
++ Keep splitting until
+  + All (or nearly all) of the examples in a subgroup have the same class.
+  + There are no remaining features to distinguish among the examples.
+  + The tree has grown to a predefined size limit.
+ 
+## Pruning a Decision Tree
+
++ If too large, decisions will be overly specific (overfitted to the training data). 
+  
+  + "Early stopping" or "Pre-pruning"
+      + Stop at a specified number of decisions
+      + Stop if there is a small number of examples
+      + With an early stop, there is no way to know whether the tree will miss subtle, but important patterns.  
+  
+  + "Post-pruning"
+      + Intentionally grow a huge, too-large tree and prune leaf nodes to reduce the size of the tree.
+      + It allows the algorithm to be certain that all the important data structures were discovered.
+  
+## Splitting Algorithms – What is Best?
+
++ A bunch of different algorithms can be used to define "best".
+  + Try to find splits that give you a homogeneous subgroup.
++ CART – uses [Gini Impurity]{style="color:red;"}
+  + How often is a randomly chosen element from the set incorrectly labeled if it was randomly labeled according to the distribution of labels in the subset?
+  + Popular in statistics
++ Iterative Dichotomiser 3 (ID3), C4.5 (and also J48), C5.0 use [information gain]{style="color:red;"} (based on [Entropy]{style="color:red;"})
+  + Popular in computer science
++ Other options include: Chi-Squared statistics, and gain ratio
+
+## Gini and Gain for a Binary Outcome
+
+CART checks the [Gini impurity]{style="color:red;"} of the outcome (i.e., how homogeneous is the outcome or what percentage of people have a "yes" outcome) in a node. 
+
+```{r}
+gini <- function(y) { # y should be coded as 0/1
+  p <- mean(y) # proportion of successes (or 1s)
+  2 * p * (1 - p) # Gini index
+}
+```
+
+It then makes a binary split based on one of the predictors.  It checks how homogeneous the outcome groups are.  Repeat for *every* possible split in *every* predictor variable. Pick the split that results in the largest reduction in impurity.
+
+Gain is the degree to which the two resulting child nodes reduce the impurity of the parent node.  CART uses whichever split results in the greatest gain.
+
+
+## Variable Importance
+
++ The first split (top of the tree) is, in some sense, the most important because it results in the purist groups (using only one split).
++ But.... variables can be used to split repeatedly.
+  + So, a different variable may result in a larger [total gain]{style="color:red;"} in purity.
++ CART trees use [surrogate variables]{style="color:red;"} to deal with missing values.
+  + So a variable that is not in the tree at all may have a non-zero variable importance.
+
+## Surrogate Variables
+
++ After building a tree, you will want to predict new people.
++ If the new person is missing a variable in the tree, CART will use whatever other split (in any other variable) best predicts the missing split information.
++ So, CART can handle some missing predictors.
+
+## Special Benefits of CART
+
++ CART can change its prediction algorithm (weights) to avoid either false positives or false negatives.
+  + Remember that different types of outcome misclassification mistakes are not the same.  
+  + A false positive for cancer, HIV, Down syndrome is **bad** but it can be corrected with a second test. However, a false negative mistake is **extremely bad**.
++ CART can adjust for over- and under-sampled outcome groups. 
+  + If you have a sample of blood biomarkers for breast cancer and half of the samples are cancerous, the tree will not give the correct guesses when applied in the general population, where breast cancer is relatively rare.
+
+## A Weakness With CART - Cardinality Bias 
+
++ CART is biased toward variables that have many distinct values (high cardinality).
+  + Remember, it is going to try *every possible* split.
+
+:::: {.columns}
+
+::: {.column width="50%"}
++ ch2: chi-square 
++ m2: a random factor with 2 equiprobable (RFE) categories;
++ m4: RFE 4 categories;
++ m10: RFE 10 categories;
++ m20: RFE 20 categories;
++ nor: an N (0, 1) random variable;
++ uni: a U (0, 1) random variable.
+:::
+
+::: {.column width="50%"}
+![](images\fig3_1.png)
+:::
+::::
+
+::: {.footer style="font-size: .2em;"}  
+Tree-Based Methods for Statistical Learning in R  by Brandon M. Greenwell 
+:::
+
+
+## Dealing with Cardinality Bias
+
++ There are very modern (cutting edge) algorithms that attempt to deal with the Cardinality Bias.
+  + Conditional inference trees - implemented in the .blue[`ctree`] package 
+      + uses adjusted statistical tests to separately determine the split variable and split point at each node (CART just uses an exhaustive search)
+      + provides unbiased split variable selection
+      + does not require pruning (or much tuning)
+  + GUIDE - not implemented in R (or Python or Julia)
+
+## Predict Breast Cancer with Trees
+
+```{r eval=TRUE, message=FALSE, warning=FALSE}
+wbcd <- 
+  suppressMessages(readr::read_csv("wisc_bc_data.csv")) %>% 
+  mutate(diagnosis = factor(diagnosis, 
+                            levels = c("B", "M"), 
+                            labels = c("Benign", "Malignant"))) %>% 
+  select(-id)
+```
+
+```{r, eval=FALSE, message=FALSE}
+#| echo: true
+wbcd <-readr::read_csv("https://raw.githubusercontent.com/dataspelunking/MLwR/master/Machine%20Learning%20with%20R%20(3rd%20Ed.)/Chapter03/wisc_bc_data.csv")
+
+wbcd <- wbcd %>% 
+  mutate(diagnosis = factor(diagnosis, 
+                            levels = c("B", "M"), 
+                            labels = c("Benign", "Malignant"))) %>% 
+  select(-id)
+
+```
+
+## Training and Test
+
+```{r}
+#| echo: true
+set.seed(321)
+
+# Put 3/4 of the data into the training set. Try to have same percentage benign
+data_split <- 
+  initial_split(wbcd,
+                prop = 3/4,  # this is the default
+                strata = diagnosis)
+
+# Create training and test data sets:
+train_data <- training(data_split) 
+test_data <- testing(data_split)
+```
+
+
+## Make a Cross Validate Object
+
+I need to tell it how to make the validation data. I will split the data into fifths.  Build models with 80% of the data and check with the remaining 20% for validation. I am using $20^{ths}$ for speed. 
+
+```{r}
+#| echo: true
+cv_folds <-
+  vfold_cv(train_data, 
+           v = 5,  # the number of sets
+           strata = diagnosis)  # keep the percentage with cancer the same
+```
+
+## Build the Recipe
+
+```{r}
+#| echo: true
+the_recipe <- 
+  recipe(diagnosis ~ .,
+         data = train_data) %>%
+  step_normalize(all_numeric()) %>% 
+  step_corr(all_predictors(), threshold = 0.7, method = "spearman")
+
+the_recipe
+```
+
+
+## Cross Validation to Figure Out the Complexity Parameter with `{tidymodels}`
+
+This is just like you have seen.
+
+```{r , fig.height=3, message=FALSE}
+#| echo: true
+cart_model <- 
+  decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+cart_workflow <- 
+  workflow() %>% 
+  add_recipe(the_recipe) %>% 
+  add_model(cart_model)
+```
+
+## Find the Best $C_p$
+
+This is just like you have seen.
+
+```{r}
+#| echo: true
+#| cache: true
+doParallel::registerDoParallel()  # use multiple CPU cores for faster processing
+
+cart_tune <- 
+  cart_workflow %>% 
+  tune_grid(resamples = cv_folds,
+            grid = 10, 
+            metrics = metric_set(roc_auc, kap),
+  control = control_grid(save_pred = TRUE)
+)
+
+doParallel::stopImplicitCluster()  # stop parallel processing
+```
+
+
+```{r}
+grid <- grid_regular(cost_complexity(), levels = 10)
+grid
+```
+
+## The Search for the Best $C_p$ $_1$
+
+```{r best}
+#| echo: true
+show_best(cart_tune, metric = "roc_auc")
+```
+
+## The Search for the Best $C_p$ $_2$
+```{r best-plot, fig.height=5, eval=FALSE}
+#| echo: true
+autoplot(cart_tune)
+```
+
+
+```{r , fig.height=5, echo=FALSE}
+autoplot(cart_tune)
+```
+
+## Finalize
+```{r last-fit}
+#| echo: true
+
+cart_best <- select_best(cart_tune, metric = "roc_auc")
+
+cart_final_workflow <- 
+  cart_workflow %>% 
+  finalize_workflow(cart_best)
+
+the_results <-
+  cart_final_workflow %>% 
+  # rebuild the model using all training data (not resampled) and fit on test
+  last_fit(split = data_split, 
+           metrics = metric_set(recall, precision, f_meas, accuracy, kap,
+                                roc_auc, sens, spec))
+```
+
+
+## Look at the Results Per Person
+
+
+```{r predict}
+the_prediction <-  
+  the_results %>% 
+  collect_predictions()
+
+head(the_prediction, n = 20)
+```
+
+## Confusion Matrix
+
+```{r confusion-matrix}
+#| echo: true
+the_prediction %>% 
+  conf_mat(diagnosis, .pred_class)
+```
+
+## ROC Curve
+
+```{r ROC}
+#| echo: true
+#| fig-height: 6
+#| warning: false
+the_prediction %>% 
+  roc_curve(diagnosis, .pred_Benign) %>% 
+  autoplot()
+```
+
+## Prediction Probabilities
+
+```{r probabilty-plot}
+#| echo: true
+#| eval: false
+the_prediction %>% 
+  ggplot() +
+  geom_density(aes(x = .pred_Benign, 
+                   fill = diagnosis), 
+               alpha = 0.5) +
+  labs(title = "True Diagnosis vs Prediction Probabilty",
+       x = "Probabilty of Being Benign",
+       y = "Density") +
+  ggthemes::theme_few()  +
+  theme(legend.title=element_blank())
+```
+
+.center[
+```{r, echo=FALSE, fig.height=4}
+the_prediction %>% 
+  ggplot() +
+  geom_density(aes(x = .pred_Benign, 
+                   fill = diagnosis), 
+               alpha = 0.5) +
+  labs(title = "True Diagnosis vs Prediction Probabilty",
+       x = "Probabilty of Being Benign",
+       y = "Density") +
+  ggthemes::theme_few()  +
+  theme(legend.title=element_blank())
+
+```
+]
+
+## Look at the Metrics
+
+```{r final-metrics}
+the_results %>%
+  collect_metrics(summarize = TRUE)
+```
+
+## CART Can Also Do Regression Trees 
+
++ Fundamentally the same ideas as classification trees 
++ Use binary splits on predictors to get the best prediction
++ Best is not pure group membership but least sum of squared errors
+
+:::: {.columns}
+
+::: {.column width="50%"}
+![](images\reg1.png)
+:::
+
+::: {.column width="50%"}
+![](images\reg2.png)
+:::
+::::
+
+
+##
+
+:::: {.columns}
+
+::: {.column width="50%"}
+![](images\reg3.png)
+:::
+
+::: {.column width="50%"}
+![](images\reg4.png)
+:::
+::::
+
+## 
+
+:::: {.columns}
+
+::: {.column width="50%"}
+![](images\reg5.png)
+:::
+
+::: {.column width="50%"}
+![](images\reg6.png)
+:::
+::::
+
+## The Optimal Fit
+
++ There is no need to keep splitting.
+.center[![:scale 70%](images\reg7.png)
+]
+
+## CART
+
++ Split on every possible point on every possible predictor and choose the two groups  (S1 and S2) such that the overall sum of squared errors are minimized: 
+
+$$\displaystyle \text{SSE} = \sum_{i \in S_1} (y_i - \bar{y_1})^2 + \sum_{i \in S_2} (y_i - \bar{y_2})^2$$
+
+You will end up with a very complex tree.
+
+## CART Complexity
+
++ Prune the trees back.
++ Breiman et al. (1984) suggested a cost–complexity tuning. 
+
+$$\displaystyle \text{SSE}_{c_{p}} = \text{SSE} + c_p \times (\# \text{Terminal Nodes})$$
++ Cross validate the quality of models with various levels of $c_p$ or look to see what is "close" to the most complex tree (within 1 SE of the best model).
+
+## C4.5, J48 or C5.0
+
++ Instead of minimizing the Sum of Squared Errors, you can minimize entropy....
+
++ The Gini index tends to prefer splits that put the most frequent class into one pure node, and the remaining classes into the other.
++ Entropy puts emphasis on balancing the class sizes in the two child nodes.
++ With two classes, Gini and entropy criteria tend to produce similar results.
+
+## Entropy
+
++ Typically entropy is measured in bits. 
++ With two classes, entropy ranges from 0 to 1. 
++ For n classes, entropy ranges from 0 to $log_2(n)$. 
++ The minimum value indicates that the sample is completely homogeneous, while the maximum value indicates that the data are as diverse as possible, and no group has even a small majority.
+
+$$\text{Entropy}(S) = \sum_{i = 1}^c -\ p_i\ log_2(p_i)$$
+
++ For a given segment of data $(S)$, the term $c$ refers to the number of class levels and $p_i$ refers to the proportion of values falling into class level $i$.
+
+$\uparrow pure\ \ \ \ \ \ \text{means} \downarrow entropy$  
+$\uparrow entropy\ \text{means} \downarrow pure$ 
+
+
+## Entropy in R
+
++ If we have a partition of data with two classes: red (60 percent) and white (40 percent). Entropy:
+
+$$\text{Entropy}(S) = \sum_{i = 1}^c -\ p_i\ log_2(p_i)$$
+
+$$-.60 \times log_2(0.60) - 0.40 \times log_2(0.4)$$
+
+## Entropy by Purity
+```{r}
+#| eval: false
+#| echo: true
+curve(-x * log2(x) - (1-x) * log2(1-x),
+      col = "red", xlab = "x", ylab = "entropy", lwd = 4)
+```
+
+```{r curve, echo = FALSE}
+curve(-x * log2(x) - (1-x) * log2(1-x),
+      col = "red", xlab = "x", ylab = "entropy", lwd = 4)
+```
+
+
+## Entropy vs. Gini
+
+![:scale 68%](images\fig2_4.png){fig-align="center" width=50%}
+
+::: {.footer style="font-size: .2em;"}  
+Tree-Based Methods for Statistical Learning in R, Figure 2-4
+:::
+
+
+## Information Gain
+
++ The algorithm calculates the change in entropy that would result from a split on each possible feature, [information gain]{style="color:red;"}. 
++ Compare before the split (S1) and the partitions resulting from the split(S2): [Information Gain (F) = Entropy(S1) − Entropy(S2)]{style="color:red;"}
+
++ After a split, the data is divided into more than one partition.
+  + The function to calculate Entropy(S2) needs to consider the total entropy across all of the partitions. 
+  + It does this by weighting each partition’s entropy by the proportion of records falling into the partition.
+
+$$\text{Entropy}(S) = \sum_{i= 1}^n w_i \text{Entropy}(P_i)$$ 
+
+## This Fits an Entropy-Based Classification Tree 
+```{r C50}
+#| error: false
+#| echo: true
+
+library(C50)
+cancerTree <- C5.0(train_data[c(-1, -2)], train_data$diagnosis)
+```
+
+##
+
+```{r plot-C50, fig.height=9, fig.width=17}
+plot(cancerTree)
+```
+
+## Pros and Cons of CART
+
+:::: {.columns}
+
+::: {.column width="50%"}
+**Pro(s)**
+
++ Small trees are [easy to interpret]{style="color:red;"}.
++ [Large data]{style="color:red;"} sets are tractable.
++ The leaves form a [natural clustering]{style="color:red;"} of the data.
++ Trees can handle [all types of data]{style="color:red;"}.
++ Trees provide [automatic variable selection]{style="color:red;"}.
++ [Missing data]{style="color:red;"} is not a problem.
++ It is completely [nonparametric]{style="color:red;"}.
+:::
+
+::: {.column width="50%"}
+**Cons(s)**
+
++ Large trees are [hard to interpret]{style="color:red;"}.
++ CART finds locally optimal solutions so it may [miss global optimum]{style="color:red;"}.
++ Lower splits are [less accurate]{style="color:red;"}.
++ Higher order interactions make [main effects hard to interpret]{style="color:red;"}.
++ CART is [biased] toward selecting high cardinality variables.
++It uses [Step functions]{style="color:red;"}.
+:::
+::::
+
+
+## Can you do better?
+
++ I love how intuitive these methods are and you can still publish with them.
++ There are other (less biased) algorithms for fitting simple trees but they have other limitations, like the inability to differentially weight false positives and negatives).
+  + Take a look at .blue[{`ctree`}] and GUIDE.
++ You can use code like I showed in the CART section for getting metrics on model fit.
++ If your goal is prediction, you can do a lot better by using many trees.
+
+
+# `caret` Package for CART
+You will still see `caret` code for CART all over the web.
+
+## Basic CART
+
+```{r, fig.height=4, eval=FALSE}
+library(rpart, quietly = TRUE)
+library(rpart.plot, quietly = TRUE)
+# the default is to build a not pruned tree
+tree <- rpart(diagnosis ~., data = train_data, method = "class")
+rpart.plot(tree)
+```
+
+
+```{r, fig.height=4, echo=FALSE}
+library(rpart)
+library(rpart.plot)
+# the default is to build a not pruned tree
+tree <- rpart(diagnosis ~., data = train_data, method = "class")
+rpart.plot(tree)
+```
+
+How do you know the optimal stopping rules (complexity parameter, people per node, etc.)?  You can cross validate!
+
+## Cross Validation for Complexity Parameter with `Caret`
+
+The state-of-the-art before `{tidymodels}` was the `caret` package.
+
+```{r , fig.height=3, message=FALSE, eval=FALSE}
+suppressWarnings(suppressMessages(library(caret)))
+
+set.seed(23)
+caretModel <- train(
+  diagnosis ~., data = train_data, method = "rpart",
+  trControl = trainControl("cv", number = 10), 
+  tuneLength = 10)  # try 10 complexity parameters
+detach("package:caret", unload = TRUE)
+
+plot(caretModel) # look at the complexity parameter
+```
+
+
+
+```{r , fig.height=3, message=FALSE, echo=FALSE}
+suppressWarnings(suppressMessages(library(caret)))
+set.seed(23)
+caretModel <- train(
+  diagnosis ~., data = train_data, method = "rpart",
+  trControl = trainControl("cv", number = 10), 
+  tuneLength = 10)  # try 10 complexity parameters
+detach("package:caret", unload = TRUE)
+
+plot(caretModel) # look at the complexity parameter
+```
+
+
+## Looking at the Best $C_p$
+
+```{r}
+caretModel[["results"]]
+```
+
+
+## Fit the Optimal Tree
+
+:::: {.columns}
+
+::: {.column width="50%"}
+```{r rpart, eval=FALSE, fig.height=5}
+tree <- rpart(diagnosis ~., 
+              data = train_data, 
+              method = "class", 
+              control = 
+                rpart.control(
+                  `cp = 0`
+                  )
+              )
+
+library(rpart.plot)
+rpart.plot(tree)
+```
+
++ You get an easy to understand model.
++ You can figure out the chance of failure for a new person.
++ You can easily see interactions.
+:::
+
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.height=5}
+tree <- rpart(diagnosis ~., 
+              data = train_data, 
+              method = "class", 
+              control = 
+                rpart.control(
+                  cp = 0
+                  )
+              )
+
+library(rpart.plot)
+rpart.plot(tree)
+```
+:::
+::::
+
